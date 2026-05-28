@@ -1,0 +1,20 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# TensorFlow cache
+*.h5
+*.pb
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.iml
+.idea/
+
+# Large model files — tracked separately
+models/output/*.tflite
