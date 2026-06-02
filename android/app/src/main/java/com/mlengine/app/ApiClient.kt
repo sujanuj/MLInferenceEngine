@@ -18,7 +18,9 @@ data class InferenceResult(
 data class AdaptiveResult(
     @SerializedName("result")          val result: InferenceResult,
     @SerializedName("routingReason")   val routingReason: String,
-    @SerializedName("latencyBudgetMs") val latencyBudgetMs: Long
+    @SerializedName("latencyBudgetMs") val latencyBudgetMs: Long,
+    @SerializedName("networkQuality")  val networkQuality: String? = null,
+    @SerializedName("extraDelayMs")    val extraDelayMs: Long? = null
 )
 
 data class InferenceRecord(
@@ -40,9 +42,19 @@ data class SessionStats(
     @SerializedName("recentRecords")         val recentRecords: List<InferenceRecord>
 )
 
+data class NetworkStatus(
+    @SerializedName("currentQuality") val currentQuality: String,
+    @SerializedName("extraDelayMs")   val extraDelayMs: Long,
+    @SerializedName("label")          val label: String
+)
+
 class ApiClient(private val baseUrl: String = "http://10.0.2.2:8080") {
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     private val gson = Gson()
 
     sealed class Result<T> {
@@ -50,36 +62,25 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8080") {
         data class Error<T>(val message: String) : Result<T>()
     }
 
-    fun infer(
-        imageBytes: ByteArray,
-        mode: String = "adaptive",
-        latencyBudgetMs: Long = 150
-    ): Result<InferenceResult> {
+    fun infer(imageBytes: ByteArray, mode: String = "adaptive", latencyBudgetMs: Long = 150): Result<InferenceResult> {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataPart(
-                "image", "image.jpg",
-                imageBytes.toRequestBody("image/jpeg".toMediaType())
-            )
+            .addFormDataPart("image", "image.jpg",
+                imageBytes.toRequestBody("image/jpeg".toMediaType()))
             .build()
-
         val url = when (mode) {
             "adaptive" -> "$baseUrl/infer/adaptive?latencyBudgetMs=$latencyBudgetMs"
             else       -> "$baseUrl/infer/$mode"
         }
-
         val request = Request.Builder().url(url).post(body).build()
-
         return try {
             val response = client.newCall(request).execute()
             val json = response.body?.string() ?: return Result.Error("Empty response")
             if (!response.isSuccessful) return Result.Error("Server error: ${response.code}")
-
-            val result = if (mode == "adaptive") {
+            val result = if (mode == "adaptive")
                 gson.fromJson(json, AdaptiveResult::class.java).result
-            } else {
+            else
                 gson.fromJson(json, InferenceResult::class.java)
-            }
             Result.Success(result)
         } catch (e: IOException) {
             Result.Error("Network error: ${e.message}")
@@ -97,12 +98,35 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8080") {
         }
     }
 
+    fun setNetworkQuality(quality: String): Result<NetworkStatus> {
+        val request = Request.Builder()
+            .url("$baseUrl/simulate/network/$quality")
+            .post("".toRequestBody())
+            .build()
+        return try {
+            val response = client.newCall(request).execute()
+            val json = response.body?.string() ?: return Result.Error("Empty response")
+            Result.Success(gson.fromJson(json, NetworkStatus::class.java))
+        } catch (e: IOException) {
+            Result.Error("Network error: ${e.message}")
+        }
+    }
+
+    fun getNetworkStatus(): Result<NetworkStatus> {
+        val request = Request.Builder().url("$baseUrl/simulate/network").get().build()
+        return try {
+            val response = client.newCall(request).execute()
+            val json = response.body?.string() ?: return Result.Error("Empty response")
+            Result.Success(gson.fromJson(json, NetworkStatus::class.java))
+        } catch (e: IOException) {
+            Result.Error("Network error: ${e.message}")
+        }
+    }
+
     fun checkHealth(): Boolean {
         return try {
             val request = Request.Builder().url("$baseUrl/health").get().build()
             client.newCall(request).execute().isSuccessful
-        } catch (e: Exception) {
-            false
-        }
+        } catch (e: Exception) { false }
     }
 }
