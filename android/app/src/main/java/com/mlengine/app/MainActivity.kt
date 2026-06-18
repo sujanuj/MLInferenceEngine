@@ -91,6 +91,13 @@ fun MLInferenceApp(viewModel: MainViewModel = viewModel(), onShowDashboard: () -
                 .verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Network Simulator Card
+            NetworkSimulatorCard(
+                currentQuality = uiState.networkQuality,
+                networkLabel = uiState.networkLabel,
+                onQualitySelected = { viewModel.setNetworkQuality(it) }
+            )
+
             ModeSelector(selectedMode = uiState.selectedMode, onModeSelected = viewModel::setMode)
             ImagePickerCard(imageUri = uiState.selectedImageUri, onPickImage = { imagePicker.launch("image/*") })
             Button(
@@ -124,6 +131,76 @@ fun MLInferenceApp(viewModel: MainViewModel = viewModel(), onShowDashboard: () -
                 }
                 MetricsDashboard(metrics)
             }
+        }
+    }
+}
+
+@Composable
+fun NetworkSimulatorCard(
+    currentQuality: String,
+    networkLabel: String,
+    onQualitySelected: (String) -> Unit
+) {
+    val qualities = listOf(
+        Triple("GOOD", "Good", Color(0xFF4CAF50)),
+        Triple("POOR", "Poor", Color(0xFFFF9800)),
+        Triple("TERRIBLE", "Terrible", Color(0xFFF44336))
+    )
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = when (currentQuality) {
+                "POOR" -> Color(0xFFFF9800).copy(alpha = 0.1f)
+                "TERRIBLE" -> Color(0xFFF44336).copy(alpha = 0.1f)
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.NetworkCheck,
+                    contentDescription = null,
+                    tint = when (currentQuality) {
+                        "POOR" -> Color(0xFFFF9800)
+                        "TERRIBLE" -> Color(0xFFF44336)
+                        else -> Color(0xFF4CAF50)
+                    }
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Network Simulator", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Simulate bad network to watch adaptive routing switch models",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                qualities.forEach { (quality, label, color) ->
+                    FilterChip(
+                        selected = currentQuality == quality,
+                        onClick = { onQualitySelected(quality) },
+                        label = { Text(label, fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = color.copy(alpha = 0.2f),
+                            selectedLabelColor = color
+                        )
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                networkLabel,
+                fontSize = 11.sp,
+                color = when (currentQuality) {
+                    "POOR" -> Color(0xFFFF9800)
+                    "TERRIBLE" -> Color(0xFFF44336)
+                    else -> Color(0xFF4CAF50)
+                },
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }

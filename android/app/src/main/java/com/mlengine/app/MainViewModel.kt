@@ -18,7 +18,9 @@ data class UiState(
     val serverOnline: Boolean = false,
     val selectedMode: String = "adaptive",
     val latencyBudgetMs: Long = 150L,
-    val selectedImageUri: Uri? = null
+    val selectedImageUri: Uri? = null,
+    val networkQuality: String = "GOOD",
+    val networkLabel: String = "Good — no delay"
 )
 
 class MainViewModel : ViewModel() {
@@ -28,7 +30,10 @@ class MainViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
-    init { checkServer() }
+    init {
+        checkServer()
+        refreshNetworkStatus()
+    }
 
     fun checkServer() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -49,6 +54,36 @@ class MainViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(selectedImageUri = uri, result = null, error = null)
     }
 
+    fun setNetworkQuality(quality: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = apiClient.setNetworkQuality(quality)) {
+                is ApiClient.Result.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        networkQuality = result.data.currentQuality,
+                        networkLabel = result.data.label
+                    )
+                }
+                is ApiClient.Result.Error -> {
+                    _uiState.value = _uiState.value.copy(error = result.message)
+                }
+            }
+        }
+    }
+
+    fun refreshNetworkStatus() {
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = apiClient.getNetworkStatus()) {
+                is ApiClient.Result.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        networkQuality = result.data.currentQuality,
+                        networkLabel = result.data.label
+                    )
+                }
+                is ApiClient.Result.Error -> {}
+            }
+        }
+    }
+
     fun runInference(context: Context) {
         val uri = _uiState.value.selectedImageUri ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -57,40 +92,24 @@ class MainViewModel : ViewModel() {
                 val imageBytes = context.contentResolver
                     .openInputStream(uri)?.readBytes()
                     ?: run {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = "Could not read image"
-                        )
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = "Could not read image")
                         return@launch
                     }
-
-                val result = apiClient.infer(
+                when (val result = apiClient.infer(
                     imageBytes = imageBytes,
                     mode = _uiState.value.selectedMode,
                     latencyBudgetMs = _uiState.value.latencyBudgetMs
-                )
-
-                when (result) {
+                )) {
                     is ApiClient.Result.Success -> {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            result = result.data,
-                            error = null
-                        )
+                        _uiState.value = _uiState.value.copy(isLoading = false, result = result.data, error = null)
                         refreshMetrics()
                     }
                     is ApiClient.Result.Error -> {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = result.message
-                        )
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = result.message)
                     }
                 }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Unknown error"
-                )
+                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Unknown error")
             }
         }
     }
@@ -98,8 +117,7 @@ class MainViewModel : ViewModel() {
     fun refreshMetrics() {
         viewModelScope.launch(Dispatchers.IO) {
             when (val result = apiClient.getMetrics()) {
-                is ApiClient.Result.Success ->
-                    _uiState.value = _uiState.value.copy(metrics = result.data)
+                is ApiClient.Result.Success -> _uiState.value = _uiState.value.copy(metrics = result.data)
                 is ApiClient.Result.Error -> {}
             }
         }
